@@ -1,4 +1,4 @@
 @echo off
-icd.exe %temp%\icd_output
-set /p icd_output=<%temp%\icd_output
-cd /d "%icd_output%"
+li-win.exe %temp%\li_output
+set /p li_output=<%temp%\li_output
+cd /d "%li_output%"

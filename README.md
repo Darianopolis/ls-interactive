@@ -17,7 +17,7 @@ Todo:
 
 ls-interactive is only currently supported on Windows.
 
-1) Compile `li.cpp` -> `bin/li.exe`
+1) Compile `li-win.cpp` -> `bin/li-win.exe`
 2) Add `bin` folder to your system path.
 3) Use `li` in a supported shell to start the tool.
 
