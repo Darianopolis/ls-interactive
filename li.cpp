@@ -52,10 +52,14 @@ struct State {
   size_t last_height = 0;
   std::unordered_map<std::string, size_t> indexes;
   bool drives = false;
+  int clear_lines_on_exit = 0;
 
   std::string query;
   
   bool show_caret = false;
+
+  State(int clear_lines_on_exit)
+    : clear_lines_on_exit(clear_lines_on_exit) {}
 
   std::unordered_map<std::string, Dir> dir_cache;
   Dir& open_dir(const std::filesystem::path& dir) {
@@ -174,11 +178,17 @@ struct State {
     std::cout << "\x1B[?25h"; // Show cursor
   }
 
-  void clearExtra(uint32_t lines)
+  void clearExtra(int lines)
   {
-    std::cout << "\x1B[1G"; // Reset to start of line
-    std::cout << "\x1B[" << lines << "A";
-    std::cout << "\x1B[" << (lines + 1) << "M"; // Clear lines!
+    if (lines < 0) {
+      for (int i = 0; i < lines; i++) {
+        std::cout << "\n";
+      }
+    } else if (lines > 0) {
+      std::cout << "\x1B[1G"; // Reset to start of line
+      std::cout << "\x1B[" << lines << "A";
+      std::cout << "\x1B[" << (lines + 1) << "M"; // Clear lines!
+    }
   }
 
   void clear() {
@@ -226,7 +236,7 @@ struct State {
     }
 
     clear();
-    clearExtra(1);
+    clearExtra(clear_lines_on_exit);
   }
 
   void open(const std::filesystem::path& cd_output) {
@@ -247,7 +257,7 @@ struct State {
     }
 
     clear();
-    clearExtra(1);
+    clearExtra(clear_lines_on_exit);
   }
 
   void prev() {
@@ -268,12 +278,12 @@ struct State {
 };
 
 int main(int argc, char **argv) {
-  if (argc != 2) {
+  if (argc != 3) {
     std::cerr << "Expected temp output file location!\n";
     return 1;
   }
 
-  auto cd_output = std::filesystem::path(argv[1]);
+  auto cd_output = std::filesystem::path(argv[2]);
 
   HANDLE hConsole = GetStdHandle(STD_INPUT_HANDLE);
   HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -285,7 +295,7 @@ int main(int argc, char **argv) {
   SetConsoleMode(hOut, flags);
   SetConsoleCP(CP_UTF8);
 
-  auto state = State{};
+  auto state = State{std::stoi(argv[1])};
   state.enter(std::filesystem::current_path());
 
   state.clearExtra(1);

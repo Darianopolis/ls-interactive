@@ -1,6 +1,10 @@
 # Ls Interactive
 
-A tiny tool for quickly navigating through a filesystem in a local terminal.
+A tiny tool for quickly and seamlessly navigating through a filesystem in a local terminal.
+
+Reduces terminal clutter by avoiding long strings of `ls`, `dir` and `cd` that clutter your command history and console buffer.
+
+Everything is done in one command that cleans up after itself to integrate seamlessly into the console UX.
 
 Goals:
 - Beat `dir`, `ls` and `cd` in number of keypresses required to perform any common actions. (Additional functionality shouldn't come at the cost of overhead)
