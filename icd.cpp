@@ -285,33 +285,11 @@ int main(int argc, char **argv) {
   SetConsoleMode(hOut, flags);
   SetConsoleCP(CP_UTF8);
 
-  // std::cout << "\x1B[s"; // Save cursor position
-
   auto state = State{};
   state.enter(std::filesystem::current_path());
 
-  // using namespace std::chrono;
-  // auto start = steady_clock::now();
-  // auto tree = PathTree::load(getenv("USERPROFILE") + std::string("\\.nms\\tree.bin"));
-  // auto treeLoad = duration_cast<milliseconds>(steady_clock::now() - start);
-  // start = steady_clock::now();
-  // auto view = tree.next(nullptr);
-  // state.path = std::filesystem::current_path();
-  // size_t skip = 0;
-  // while (view && state.paths.size() < 500) {
-  //   if ((skip++ > 100'000) && !view.value().path().string().starts_with("C:\\$Recycle.Bin")) {
-  //     state.paths.push_back(view.value().path());
-  //   }
-  //   // std::cout << "path = " << view.value().path() << '\n';
-
-  //   view = tree.next(&view.value());
-  // }
-  // auto stateLoad = duration_cast<milliseconds>(steady_clock::now() - start);
-
   state.clearExtra(1);
   state.draw();
-
-  // std::cout << "tree = " << treeLoad << " state = " << stateLoad;
 
   INPUT_RECORD inputBuffer[1];
   INPUT_RECORD& input = inputBuffer[0];
@@ -323,7 +301,6 @@ int main(int argc, char **argv) {
     }
     if (input.EventType == KEY_EVENT) {
       KEY_EVENT_RECORD& e = input.Event.KeyEvent;
-      // std::cout << "key event, key = " << e.wVirtualKeyCode << '\n';
       if (e.bKeyDown) {
         if (e.wVirtualKeyCode == VK_UP 
             || (e.wVirtualKeyCode == VK_TAB && (e.dwControlKeyState & SHIFT_PRESSED))
@@ -338,8 +315,6 @@ int main(int argc, char **argv) {
               && state.query.empty()
               && !(e.dwControlKeyState & SHIFT_PRESSED))
             || (e.uChar.AsciiChar == 'h' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
-          // std::cout << "going left from " << state.path.string() << " -> " << (state.path == state.path.parent_path());
-          // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
           state.leave();
         } else if (e.wVirtualKeyCode == VK_RIGHT 
             || e.uChar.AsciiChar == '\\' || e.uChar.AsciiChar == '/'
