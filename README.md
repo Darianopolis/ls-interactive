@@ -9,7 +9,6 @@ Everything is done in one command that cleans up after itself to integrate seaml
 Goals:
 - Beat `dir`, `ls` and `cd` in number of keypresses required to perform any common actions. (Additional functionality shouldn't come at the cost of overhead)
     - E.g. `cd ..` takes 6 keypresses and two hands. `li`, `Enter`, `Backspace`, `Enter` takes only 5 and one hand.
-    - Yes, the tool is only called `li` because that was quickest to type and run in a terminal.
 - Avoid cluttering up console output by reusing console buffer lines.
 
 Todo:

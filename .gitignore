@@ -2,5 +2,4 @@
 .vscode
 
 # Output
-bin/li-win.exe
-bin/li-win.pdb
+bin/*.exe

@@ -16,7 +16,7 @@ struct File {
   std::filesystem::path path;
   bool dir = false;
   bool non_empty = false;
-  
+
   File(const std::filesystem::path& path): path(path) {
     try {
       dir = std::filesystem::is_directory(path);
@@ -37,8 +37,8 @@ template<typename T>
 bool contains_ci(const T& haystack, const T& needle)
 {
   auto it = std::search(
-    std::begin(haystack), std::end(haystack), 
-    std::begin(needle), std::end(needle), 
+    std::begin(haystack), std::end(haystack),
+    std::begin(needle), std::end(needle),
     [](auto c1, auto c2) { return std::toupper(c1) == std::toupper(c2); });
 
   return it != std::end(haystack);
@@ -55,7 +55,7 @@ struct State {
   int clear_lines_on_exit = 0;
 
   std::string query;
-  
+
   bool show_caret = false;
 
   State(int clear_lines_on_exit)
@@ -69,7 +69,7 @@ struct State {
       cached.paths.clear();
       try {
         std::error_code ec;
-        for (auto& e : std::filesystem::directory_iterator(dir, 
+        for (auto& e : std::filesystem::directory_iterator(dir,
             std::filesystem::directory_options::skip_permission_denied)) {
           cached.paths.push_back(e.path());
         }
@@ -130,7 +130,7 @@ struct State {
 
     std::cout << "\x1B[" << (1 + last_height) << "M"; // Clear lines!
 
-    std::cout << "\x1B[4;32m" << path.string() 
+    std::cout << "\x1B[4;32m" << path.string()
       << (path.string().ends_with("\\") ? "" : "\\")
       << "\x1B[0m\n";
 
@@ -152,7 +152,7 @@ struct State {
       auto parent_path = p.path.parent_path();
       auto parent = parent_path.string();
       if (parent.length() + 2 > cols) parent.resize(cols - 2);
-      
+
       auto name = p.path.filename().string();
       if (name.empty()) name = parent;
       else if (name.length() + 4 > cols) name.resize(cols - 4);
@@ -312,21 +312,21 @@ int main(int argc, char **argv) {
     if (input.EventType == KEY_EVENT) {
       KEY_EVENT_RECORD& e = input.Event.KeyEvent;
       if (e.bKeyDown) {
-        if (e.wVirtualKeyCode == VK_UP 
+        if (e.wVirtualKeyCode == VK_UP
             || (e.wVirtualKeyCode == VK_TAB && (e.dwControlKeyState & SHIFT_PRESSED))
             || (e.uChar.AsciiChar == 'k' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
           state.prev();
-        } else if (e.wVirtualKeyCode == VK_DOWN 
+        } else if (e.wVirtualKeyCode == VK_DOWN
             || (e.wVirtualKeyCode == VK_TAB && !(e.dwControlKeyState & SHIFT_PRESSED))
             || (e.uChar.AsciiChar == 'j' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
           state.next();
-        } else if (e.wVirtualKeyCode == VK_LEFT 
+        } else if (e.wVirtualKeyCode == VK_LEFT
             || (e.wVirtualKeyCode == VK_BACK
               && state.query.empty()
               && !(e.dwControlKeyState & SHIFT_PRESSED))
             || (e.uChar.AsciiChar == 'h' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
           state.leave();
-        } else if (e.wVirtualKeyCode == VK_RIGHT 
+        } else if (e.wVirtualKeyCode == VK_RIGHT
             || e.uChar.AsciiChar == '\\' || e.uChar.AsciiChar == '/'
             || (e.uChar.AsciiChar == 'l' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
           state.enter();
