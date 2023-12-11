@@ -1,5 +1,9 @@
 # IDE
-.vscode
+.vscode/
+.idea/
+cmake-build-debug/
+cmake-build-release/
+cmake-build-relwithdebinfo/
 
 # Output
 bin/*.exe
