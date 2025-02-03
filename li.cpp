@@ -55,7 +55,7 @@ bool CaseInsensitiveContains(const T& haystack, const T& needle)
 
 struct State
 {
-    HANDLE              out = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE       out_handle = GetStdHandle(STD_OUTPUT_HANDLE);
     fs::path           path = "";
     std::vector<File> paths;
     size_t         selected = 0;
@@ -108,13 +108,13 @@ struct State
         if (const auto f = indexes.find(p.string()); f != indexes.end()) {
             selected = f->second;
             if (selected >= paths.size()) {
-                selected = -1;
+                selected = ~0ull;
             }
         } else {
-            selected = -1;
+            selected = ~0ull;
         }
 
-        if (selected == -1) {
+        if (selected == ~0ull) {
             selected = 0;
         }
     }
@@ -140,7 +140,7 @@ struct State
     void Draw()
     {
         CONSOLE_SCREEN_BUFFER_INFO inf;
-        GetConsoleScreenBufferInfo(out, &inf);
+        GetConsoleScreenBufferInfo(out_handle, &inf);
         const auto cols = inf.srWindow.Right - inf.srWindow.Left + 1;
 
         std::cout << "\x1B[?25l"; // Hide cursor
@@ -251,15 +251,15 @@ struct State
     void Enter()
     {
         if (!paths.empty()) {
-            if (const auto selected = paths[this->selected]; selected.dir && selected.non_empty) {
+            if (const auto selected_file = paths[this->selected]; selected_file.dir && selected_file.non_empty) {
                 query.clear();
-                Enter(selected.path);
+                Enter(selected_file.path);
                 Draw();
             }
         }
     }
 
-    void ReturnToCurrent(const fs::path&cd_output) const
+    void ReturnToCurrent(const fs::path& cd_output) const
     {
         std::ofstream out(cd_output, std::ios::out);
         if (out) {
@@ -279,8 +279,8 @@ struct State
             if (query.empty()) {
                 out << path.string();
             } else {
-                if (const auto selected = paths[this->selected]; selected.dir) {
-                    out << selected.path.string();
+                if (const auto selected_dir = paths[this->selected]; selected_dir.dir) {
+                    out << selected_dir.path.string();
                 } else {
                     out << path.string();
                 }
@@ -386,7 +386,7 @@ int main(const int argc, char** argv)
 
                 } else if (e.uChar.AsciiChar == ':') {
                     if (!state.query.empty()) {
-                        state.query[0] = std::toupper(state.query[0]);
+                        state.query[0] = char(std::toupper(state.query[0]));
                         auto path = fs::path(state.query + ":\\");
                         state.query.clear();
                         if (exists(path)) {
