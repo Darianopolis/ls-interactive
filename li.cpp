@@ -1,6 +1,26 @@
+#if defined(WIN32)
+#define LI_PLATFORM_WINDOWS
+#else
+#define LI_PLATFORM_LINUX
+#endif
+
+#if defined(LI_PLATFORM_WINDOWS)
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#endif
+
+#if defined(LI_PLATFORM_LINUX)
+#include <sys/ioctl.h>
+#include <stdio.h>
+#include <termios.h>
+#include <unistd.h>
+#include <cassert>
+
+// For tracking shift modifier state in a graphical environment with X11/XWayland available
+#include <X11/XKBlib.h>
+#include <poll.h>
+#endif
 
 #include <iostream>
 #include <filesystem>
@@ -8,6 +28,10 @@
 #include <unordered_map>
 #include <ranges>
 #include <fstream>
+#include <vector>
+#include <print>
+
+using namespace std::literals;
 
 // https://docs.microsoft.com/en-us/windows/console/classic-vs-vt
 // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
@@ -55,7 +79,9 @@ bool CaseInsensitiveContains(const T& haystack, const T& needle)
 
 struct State
 {
+#if defined(LI_PLATFORM_WINDOWS)
     HANDLE       out_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+#endif
     fs::path           path = "";
     std::vector<File> paths;
     size_t         selected = 0;
@@ -139,9 +165,17 @@ struct State
 
     void Draw()
     {
+#if defined(LI_PLATFORM_WINDOWS)
         CONSOLE_SCREEN_BUFFER_INFO inf;
         GetConsoleScreenBufferInfo(out_handle, &inf);
         const auto cols = inf.srWindow.Right - inf.srWindow.Left + 1;
+#endif
+
+#if defined(LI_PLATFORM_LINUX)
+        struct winsize w;
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+        const auto cols = w.ws_col;
+#endif
 
         std::cout << "\x1B[?25l"; // Hide cursor
         std::cout << "\x1B[1G"; // Reset to start of line
@@ -152,7 +186,7 @@ struct State
         std::cout << "\x1B[" << (1 + last_height) << "M"; // Clear lines!
 
         std::cout << "\x1B[4;32m" << path.string()
-                << (path.string().ends_with("\\") ? "" : "\\")
+                << (path.generic_string().ends_with("/") ? "" : "/")
                 << "\x1B[0m\n";
 
         constexpr size_t before = 10;
@@ -168,7 +202,7 @@ struct State
             using namespace std::string_literals;
             std::cout << ((i == selected) ? ">> \x1B[4m" : "   ");
 
-            std::cout << (p.dir && p.non_empty ? "\x1B[33m" : "\x1B[39m");
+            std::cout << (p.dir && p.non_empty ? "\x1B[93m" : "\x1B[39m");
 
             auto parent_path = p.path.parent_path();
             auto parent = parent_path.string();
@@ -204,6 +238,7 @@ struct State
 
         std::cout << "? " << query;
         std::cout << "\x1B[?25h"; // Show cursor
+        std::cout.flush();
     }
 
     static void ClearExtra(const int lines)
@@ -327,6 +362,7 @@ int main(const int argc, char** argv)
 
     const auto cd_output = fs::path(argv[2]);
 
+#if defined(LI_PLATFORM_WINDOWS)
     const HANDLE hConsole = GetStdHandle(STD_INPUT_HANDLE);
     const HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwOriginalOutMode;
@@ -336,6 +372,7 @@ int main(const int argc, char** argv)
     flags |= DISABLE_NEWLINE_AUTO_RETURN;
     SetConsoleMode(hOut, flags);
     SetConsoleCP(CP_UTF8);
+#endif
 
     auto state = State{std::stoi(argv[1])};
     state.Enter(fs::current_path());
@@ -343,6 +380,7 @@ int main(const int argc, char** argv)
     state.ClearExtra(1);
     state.Draw();
 
+#if defined(LI_PLATFORM_WINDOWS)
     INPUT_RECORD inputBuffer[1];
     const INPUT_RECORD& input = inputBuffer[0];
     DWORD inputsRead;
@@ -417,4 +455,103 @@ int main(const int argc, char** argv)
     }
 
     std::cout << "Error: " << GetLastError() << '\n';
+#endif
+
+#if defined(LI_PLATFORM_LINUX)
+    static termios orig_termios;
+
+    tcgetattr(STDIN_FILENO, &orig_termios);
+    atexit(+[]() { tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios); });
+
+    termios raw;
+    tcgetattr(STDIN_FILENO, &raw);
+    raw.c_lflag &= ~(ECHO | ICANON);
+    raw.c_cc[VMIN] = 0;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+
+    // Try to open an X11 display. If this fails we skip checking for shift states
+    auto display = XOpenDisplay(NULL);
+
+    constexpr static auto getch = [] -> char {
+        char c = -1;
+        auto res = read(STDIN_FILENO, &c, 1);
+        return c;
+    };
+
+    for (;;) {
+        pollfd pdf{ STDIN_FILENO, POLLIN };
+        if (poll(&pdf, 1, -1) <= 0) continue;
+
+        for (;;) {
+            auto c = getch();
+            if (c <= 0) break;
+
+            // if (iscntrl(c)) {
+            //     printf("%d\r\n", c);
+            // } else {
+            //     printf("%d ('%c')\r\n", c, c);
+            // }
+
+            if (c == 27 /* control */) {
+                if (getch() == '[') {
+                    c = getch();
+                    if      (c == 'A' /* up */) state.Prev();
+                    else if (c == 'B' /* down */) state.Next();
+                    else if (c == 'C' /* right */) state.Enter();
+                    else if (c == 'D' /* left */) state.Leave();
+                    else if (c == 'Z' /* shift-tab */) state.Prev();
+                } else {
+                    // Must be ESC key
+                    state.ReturnToCurrent(cd_output);
+                    return EXIT_SUCCESS;
+                }
+            }
+            else if (c == '\t') state.Next();
+            else if (c == 127 /* backspace */) {
+                _XkbStateRec xkb_state = {};
+                if (display) XkbGetState(display, XkbUseCoreKbd, &xkb_state);
+                if (xkb_state.mods & ShiftMask) {
+                    state.query.clear();
+                    state.Enter(state.path);
+                    state.Draw();
+                }
+                else if (state.query.empty()) {
+                    state.Leave();
+                } else {
+                    state.query.resize(state.query.length() - 1);
+                    state.Enter(state.path);
+                    state.Draw();
+                }
+            }
+            else if (c == 8 /* ctrl-backspace */) {
+                state.query.clear();
+                state.Enter(state.path);
+                state.Draw();
+            }
+            else if (c == '\n') {
+                state.Open(cd_output);
+                return EXIT_SUCCESS;
+            }
+
+            else if (c == '/') state.Enter();
+            else if (c == ':') {
+                state.Enter("/");
+                state.Draw();
+            }
+            else if (c == '~') {
+                state.Enter(getenv("HOME"));
+                state.Draw();
+            }
+            else if (c >= ' ' && c <= '~') {
+                state.query += c;
+                state.Enter(state.path);
+                state.Draw();
+            }
+        }
+    }
+
+    return EXIT_SUCCESS;
+
+#endif
 }

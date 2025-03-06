@@ -1,0 +1,4 @@
+#!/bin/bash
+
+alias li='. li-shell'
+LI_TMP_FILE=~/.local/share/ls-interactive/output
