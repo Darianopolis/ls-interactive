@@ -307,25 +307,32 @@ struct State
         ClearExtra(clear_lines_on_exit);
     }
 
-    void Open(const fs::path&cd_output) const
+    [[nodiscard]] bool Open(const fs::path& cd_output) const
     {
+        fs::path target;
+        if (query.empty()) {
+            target = path.string();
+        } else {
+            if (selected >= paths.size()) return false;
+            if (const auto selected_dir = paths[selected]; selected_dir.dir) {
+                target = selected_dir.path.string();
+            } else {
+                target = path.string();
+            }
+        }
+        if (!fs::exists(target)) return false;
+
         std::ofstream out(cd_output, std::ios::out);
         if (out) {
-            if (query.empty()) {
-                out << path.string();
-            } else {
-                if (const auto selected_dir = paths[this->selected]; selected_dir.dir) {
-                    out << selected_dir.path.string();
-                } else {
-                    out << path.string();
-                }
-            }
+            out << target.string();
             out.flush();
             out.close();
         }
 
         Clear();
         ClearExtra(clear_lines_on_exit);
+
+        return true;
     }
 
     void Prev()
@@ -415,8 +422,9 @@ int main(const int argc, char** argv)
                     state.Enter();
 
                 } else if (e.wVirtualKeyCode == VK_RETURN) {
-                    state.Open(cd_output);
-                    return 0;
+                    if (state.Open(cd_output)) {
+                        return 0;
+                    }
 
                 } else if (e.wVirtualKeyCode == VK_ESCAPE) {
                     state.ReturnToCurrent(cd_output);
@@ -530,8 +538,9 @@ int main(const int argc, char** argv)
                 state.Draw();
             }
             else if (c == '\n') {
-                state.Open(cd_output);
-                return EXIT_SUCCESS;
+                if (state.Open(cd_output)) {
+                    return EXIT_SUCCESS;
+                }
             }
 
             else if (c == '/') state.Enter();
