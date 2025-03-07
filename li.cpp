@@ -143,6 +143,13 @@ struct State
         if (selected == ~0ull) {
             selected = 0;
         }
+
+        Draw();
+    }
+
+    void UpdateResults()
+    {
+        Enter(path);
     }
 
     static bool IsDir(const fs::path&path)
@@ -382,10 +389,8 @@ int main(const int argc, char** argv)
 #endif
 
     auto state = State{std::stoi(argv[1])};
-    state.Enter(fs::current_path());
-
     state.ClearExtra(1);
-    state.Draw();
+    state.Enter(fs::current_path());
 
 #if defined(LI_PLATFORM_WINDOWS)
     INPUT_RECORD inputBuffer[1];
@@ -438,14 +443,12 @@ int main(const int argc, char** argv)
                         if (exists(path)) {
                             state.Enter(path);
                         }
-                        state.Draw();
                     }
 
                 } else if (e.uChar.AsciiChar >= ' ' && e.uChar.AsciiChar <= '~') {
                     const char c = e.uChar.AsciiChar;
                     state.query += c;
-                    state.Enter(state.path);
-                    state.Draw();
+                    state.OnQueryUpdate();
 
                 } else if (e.wVirtualKeyCode == VK_BACK) {
                     if (!state.query.empty()) {
@@ -454,8 +457,7 @@ int main(const int argc, char** argv)
                         } else {
                             state.query.resize(state.query.length() - 1);
                         }
-                        state.Enter(state.path);
-                        state.Draw();
+                        state.OnQueryUpdate();
                     }
                 }
             }
@@ -516,46 +518,39 @@ int main(const int argc, char** argv)
                 }
             }
             else if (c == '\t') state.Next();
+            else if (c == 23 /* Ctrl-W */) {
+                state.query.clear();
+                state.UpdateResults();
+            }
             else if (c == 127 /* backspace */) {
-                _XkbStateRec xkb_state = {};
+                XkbStateRec xkb_state = {};
                 if (display) XkbGetState(display, XkbUseCoreKbd, &xkb_state);
                 if (xkb_state.mods & ShiftMask) {
                     state.query.clear();
-                    state.Enter(state.path);
-                    state.Draw();
+                    state.UpdateResults();
                 }
                 else if (state.query.empty()) {
                     state.Leave();
                 } else {
                     state.query.resize(state.query.length() - 1);
-                    state.Enter(state.path);
-                    state.Draw();
+                    state.UpdateResults();
                 }
             }
             else if (c == 8 /* ctrl-backspace */) {
                 state.query.clear();
-                state.Enter(state.path);
-                state.Draw();
+                state.UpdateResults();
             }
             else if (c == '\n') {
                 if (state.Open(cd_output)) {
                     return EXIT_SUCCESS;
                 }
             }
-
             else if (c == '/') state.Enter();
-            else if (c == ':') {
-                state.Enter("/");
-                state.Draw();
-            }
-            else if (c == '~') {
-                state.Enter(getenv("HOME"));
-                state.Draw();
-            }
+            else if (c == ':') state.Enter("/");
+            else if (c == '~') state.Enter(getenv("HOME"));
             else if (c >= ' ' && c <= '~') {
                 state.query += c;
-                state.Enter(state.path);
-                state.Draw();
+                state.UpdateResults();
             }
         }
     }
