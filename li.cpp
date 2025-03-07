@@ -209,7 +209,15 @@ struct State
             using namespace std::string_literals;
             std::cout << ((i == selected) ? ">> \x1B[4m" : "   ");
 
-            std::cout << (p.dir && p.non_empty ? "\x1B[93m" : "\x1B[39m");
+#if defined(LI_PLATFORM_WINDOWS)
+#  define LI_FOLDER_COLOR "33m"
+#endif
+
+#if defined(LI_PLATFORM_LINUX)
+# define LI_FOLDER_COLOR "93m"
+#endif
+
+            std::cout << (p.dir && p.non_empty ? "\x1B[" LI_FOLDER_COLOR : "\x1B[39m");
 
             auto parent_path = p.path.parent_path();
             auto parent = parent_path.string();
@@ -448,7 +456,7 @@ int main(const int argc, char** argv)
                 } else if (e.uChar.AsciiChar >= ' ' && e.uChar.AsciiChar <= '~') {
                     const char c = e.uChar.AsciiChar;
                     state.query += c;
-                    state.OnQueryUpdate();
+                    state.UpdateResults();
 
                 } else if (e.wVirtualKeyCode == VK_BACK) {
                     if (!state.query.empty()) {
@@ -457,7 +465,7 @@ int main(const int argc, char** argv)
                         } else {
                             state.query.resize(state.query.length() - 1);
                         }
-                        state.OnQueryUpdate();
+                        state.UpdateResults();
                     }
                 }
             }

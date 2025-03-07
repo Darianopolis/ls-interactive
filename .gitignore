@@ -4,5 +4,5 @@
 
 # Output
 build/
-bin/li-win
+bin/li-win.exe
 bin/li-posix
