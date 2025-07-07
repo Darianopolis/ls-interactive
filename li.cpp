@@ -38,6 +38,14 @@ using namespace std::literals;
 
 namespace fs = std::filesystem;
 
+#if defined(LI_PLATFORM_WINDOWS)
+constexpr char Separator = '\\';
+#endif
+#if defined(LI_PLATFORM_LINUX)
+constexpr char Separator = '/';
+#endif
+constexpr char SeparatorStr[2] = { Separator, '\0' };
+
 struct File
 {
     fs::path  path;
@@ -193,7 +201,7 @@ struct State
         std::cout << "\x1B[" << (1 + last_height) << "M"; // Clear lines!
 
         std::cout << "\x1B[4;32m" << path.string()
-                << (path.generic_string().ends_with("/") ? "" : "/")
+                << (path.string().ends_with(Separator) ? "" : SeparatorStr)
                 << "\x1B[0m\n";
 
         constexpr size_t before = 10;
@@ -238,8 +246,8 @@ struct State
                 std::cout << "..";
             } else {
                 std::cout << name;
-                if (p.dir && !name.ends_with("\\")) {
-                    std::cout << "\\";
+                if (p.dir && !name.ends_with(Separator)) {
+                    std::cout << Separator;
                 }
             }
             std::cout << "\x1b[0m\n";
