@@ -481,13 +481,16 @@ int main(const int argc, char** argv)
                     return 0;
 
                 } else if (e.uChar.AsciiChar == ':') {
-                    if (!state.query.empty()) {
-                        state.query[0] = char(std::toupper(state.query[0]));
-                        auto path = fs::path(state.query + ":\\");
-                        state.query.clear();
+                    if (state.query.size() == 1) {
+                        std::string letter { char(std::toupper(state.query[0])) };
+                        auto path = fs::path(letter + ":\\");
                         if (exists(path)) {
+                            state.query.clear();
                             state.Enter(path);
                         }
+                    } else {
+                        state.query.clear();
+                        state.Enter("\\");
                     }
 
                 } else if (e.uChar.AsciiChar >= ' ' && e.uChar.AsciiChar <= '~') {
@@ -591,8 +594,14 @@ int main(const int argc, char** argv)
                 }
             }
             else if (c == '/') state.Enter();
-            else if (c == ':') state.Enter("/");
-            else if (c == '~') state.Enter(getenv("HOME"));
+            else if (c == ':') {
+                state.query.clear();
+                state.Enter("/");
+            }
+            else if (c == '~') {
+                state.query.clear();
+                state.Enter(getenv("HOME"));
+            }
             else if (c >= ' ' && c <= '~') {
                 state.query += c;
                 state.UpdateResults();
