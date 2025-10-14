@@ -73,7 +73,7 @@ struct Dir
 
 // find substring (case insensitive)
 template<typename T>
-bool CaseInsensitiveContains(const T& haystack, const T& needle)
+auto CaseInsensitiveFind(const T& haystack, const T& needle)
 {
     auto it = std::search(
         std::begin(haystack), std::end(haystack),
@@ -82,7 +82,13 @@ bool CaseInsensitiveContains(const T& haystack, const T& needle)
             return std::toupper(c1) == std::toupper(c2);
         });
 
-    return it != std::end(haystack);
+    return it;
+}
+
+template<typename T>
+bool CaseInsensitiveContains(const T& haystack, const T& needle)
+{
+    return CaseInsensitiveFind(haystack, needle) != std::end(haystack);
 }
 
 struct State
@@ -106,7 +112,7 @@ struct State
         : clear_lines_on_exit(clear_lines_on_exit)
     {}
 
-    Dir& OpenDir(const fs::path&dir)
+    Dir& OpenDir(const fs::path& dir)
     {
         auto& cached = dir_cache[dir.string()];
         if (!cached.cached) {
@@ -121,8 +127,16 @@ struct State
             catch (...) {
                 std::cout << "exception!\n";
             }
-            std::ranges::stable_sort(cached.paths, [](auto&l, auto&r) {
-                return (l.dir && !r.dir);
+            std::ranges::stable_sort(cached.paths, [](const File& l, const File& r) -> bool {
+
+                // Directories first
+                if (l.dir != r.dir) return (l.dir && !r.dir);
+
+                auto l_name = l.path.filename().string();
+                auto r_name = r.path.filename().string();
+
+                // Sort lexicographically
+                return l_name < r_name;
             });
         }
         return cached;
@@ -137,6 +151,21 @@ struct State
             if (CaseInsensitiveContains(p2.path.filename().string(), query)) {
                 paths.push_back(p2);
             }
+        }
+
+        if (!query.empty()) {
+            std::ranges::stable_sort(paths, [&](const File& l, const File& r) -> bool {
+                auto l_name = l.path.filename().string();
+                auto r_name = r.path.filename().string();
+                auto l_pos = CaseInsensitiveFind(l_name, query) - std::begin(l_name);
+                auto r_pos = CaseInsensitiveFind(r_name, query) - std::begin(r_name);
+
+                // Prefer earlier matches
+                if (l_pos != r_pos) return l_pos < r_pos;
+
+                // Prefer shorter total matches
+                return l_name.length() < r_name.length();
+            });
         }
 
         if (const auto f = indexes.find(p.string()); f != indexes.end()) {
