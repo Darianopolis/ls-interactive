@@ -15,23 +15,20 @@
 
 using namespace std::literals;
 
-namespace fs = std::filesystem;
-
-constexpr char Separator = '/';
-constexpr char SeparatorStr[2] = { Separator, '\0' };
+constexpr std::string_view separator = "/";
 
 struct File
 {
-    fs::path  path;
-    bool       dir = false;
+    std::filesystem::path path;
+    bool is_dir = false;
     bool non_empty = false;
 
-    File(const fs::path& path)
-        : path(path)
+    File(std::filesystem::path _path)
+        : path(std::move(_path))
     {
         try {
-            dir = is_directory(path);
-            non_empty = !is_empty(path);
+            is_dir = std::filesystem::is_directory(path);
+            non_empty = !std::filesystem::is_empty(path);
         }
         catch (...) {}
     }
@@ -41,13 +38,12 @@ struct File
 
 struct Dir
 {
-    std::vector<File> paths;
-    bool              cached = false;
+    std::vector<File> files;
+    bool cached = false;
 };
 
-// find substring (case insensitive)
 template<typename T>
-auto CaseInsensitiveFind(const T& haystack, const T& needle)
+auto case_insensitive_find(const T& haystack, const T& needle)
 {
     auto it = std::search(
         std::begin(haystack), std::end(haystack),
@@ -60,51 +56,41 @@ auto CaseInsensitiveFind(const T& haystack, const T& needle)
 }
 
 template<typename T>
-bool CaseInsensitiveContains(const T& haystack, const T& needle)
+auto case_insensitive_contains(const T& haystack, const T& needle) -> bool
 {
-    return CaseInsensitiveFind(haystack, needle) != std::end(haystack);
+    return case_insensitive_find(haystack, needle) != std::end(haystack);
 }
 
-struct State
+struct LsInteractive
 {
-#if defined(LI_PLATFORM_WINDOWS)
-    HANDLE       out_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-#endif
-    fs::path           path = "";
+    std::filesystem::path path = "";
     std::vector<File> paths;
-    size_t         selected = 0;
-    size_t      last_height = 0;
-    bool             drives = false;
+    size_t selected = 0;
+    size_t last_height = 0;
+    bool drives = false;
     int clear_lines_on_exit = 0;
-    bool         show_caret = false;
-    std::string       query;
+    bool show_caret = false;
+    std::string query;
 
-    std::unordered_map<std::string, size_t> indexes;
-    std::unordered_map<std::string, Dir>  dir_cache;
+    std::unordered_map<std::filesystem::path, size_t> index_cache;
+    std::unordered_map<std::filesystem::path, Dir> dir_cache;
 
-    State(const int clear_lines_on_exit)
-        : clear_lines_on_exit(clear_lines_on_exit)
-    {}
-
-    Dir& OpenDir(const fs::path& dir)
+    Dir& open_dir(const std::filesystem::path& dir)
     {
-        auto& cached = dir_cache[dir.string()];
+        auto& cached = dir_cache[dir];
         if (!cached.cached) {
             cached.cached = true;
-            cached.paths.clear();
+            cached.files.clear();
             try {
-                for (auto&e: fs::directory_iterator(dir,
-                        fs::directory_options::skip_permission_denied)) {
-                    cached.paths.push_back(e.path());
+                for (auto&e: std::filesystem::directory_iterator(dir,
+                        std::filesystem::directory_options::skip_permission_denied)) {
+                    cached.files.push_back(e.path());
                 }
-            }
-            catch (...) {
-                std::cout << "exception!\n";
-            }
-            std::ranges::stable_sort(cached.paths, [](const File& l, const File& r) -> bool {
+            } catch (...) {}
+            std::ranges::stable_sort(cached.files, [](const File& l, const File& r) -> bool {
 
                 // Directories first
-                if (l.dir != r.dir) return (l.dir && !r.dir);
+                if (l.is_dir != r.is_dir) return (l.is_dir && !r.is_dir);
 
                 auto l_name = l.path.filename().string();
                 auto r_name = r.path.filename().string();
@@ -116,7 +102,7 @@ struct State
         return cached;
     }
 
-    void Enter(fs::path p)
+    void enter(std::filesystem::path p)
     {
         while (!std::filesystem::exists(p)) {
             p = p.parent_path();
@@ -125,8 +111,8 @@ struct State
         paths.clear();
         this->path = p;
 
-        for (const auto& dir = OpenDir(p); auto& p2: dir.paths) {
-            if (CaseInsensitiveContains(p2.path.filename().string(), query)) {
+        for (const auto& dir = open_dir(p); auto& p2: dir.files) {
+            if (case_insensitive_contains(p2.path.filename().string(), query)) {
                 paths.push_back(p2);
             }
         }
@@ -135,8 +121,8 @@ struct State
             std::ranges::stable_sort(paths, [&](const File& l, const File& r) -> bool {
                 auto l_name = l.path.filename().string();
                 auto r_name = r.path.filename().string();
-                auto l_pos = CaseInsensitiveFind(l_name, query) - std::begin(l_name);
-                auto r_pos = CaseInsensitiveFind(r_name, query) - std::begin(r_name);
+                auto l_pos = case_insensitive_find(l_name, query) - std::begin(l_name);
+                auto r_pos = case_insensitive_find(r_name, query) - std::begin(r_name);
 
                 // Prefer earlier matches
                 if (l_pos != r_pos) return l_pos < r_pos;
@@ -146,7 +132,7 @@ struct State
             });
         }
 
-        if (const auto f = indexes.find(p.string()); f != indexes.end()) {
+        if (const auto f = index_cache.find(p); f != index_cache.end()) {
             selected = f->second;
             if (selected >= paths.size()) {
                 selected = ~0ull;
@@ -159,33 +145,15 @@ struct State
             selected = 0;
         }
 
-        Draw();
+        draw();
     }
 
-    void UpdateResults()
+    void update_results()
     {
-        Enter(path);
+        enter(path);
     }
 
-    static bool IsDir(const fs::path&path)
-    {
-        try {
-            return is_directory(path);
-        }
-        catch (...) {}
-        return false;
-    }
-
-    static bool IsNonEmpty(const fs::path& path)
-    {
-        try {
-            return IsDir(path) && !is_empty(path);
-        }
-        catch (...) {}
-        return false;
-    }
-
-    void Draw()
+    void draw()
     {
         struct winsize w;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
@@ -200,7 +168,7 @@ struct State
         std::cout << "\x1B[" << (1 + last_height) << "M"; // Clear lines!
 
         std::cout << "\x1B[4;32m" << path.string()
-                << (path.string().ends_with(Separator) ? "" : SeparatorStr)
+                << (path.string().ends_with(separator) ? "" : separator)
                 << "\x1B[0m\n";
 
         constexpr size_t before = 10;
@@ -218,7 +186,7 @@ struct State
 
 #define LI_FOLDER_COLOR "93m"
 
-            std::cout << (p.dir && p.non_empty ? "\x1B[" LI_FOLDER_COLOR : "\x1B[39m");
+            std::cout << (p.is_dir && p.non_empty ? "\x1B[" LI_FOLDER_COLOR : "\x1B[39m");
 
             auto parent_path = p.path.parent_path();
             auto parent = parent_path.string();
@@ -239,8 +207,8 @@ struct State
                 std::cout << "..";
             } else {
                 std::cout << name;
-                if (p.dir && !name.ends_with(Separator)) {
-                    std::cout << Separator;
+                if (p.is_dir && !name.ends_with(separator)) {
+                    std::cout << separator;
                 }
             }
             std::cout << "\x1b[0m\n";
@@ -257,7 +225,7 @@ struct State
         std::cout.flush();
     }
 
-    static void ClearExtra(const int lines)
+    static void clear_extra(const int lines)
     {
         if (lines < 0) {
             for (int i = 0; i < lines; i++) {
@@ -271,7 +239,7 @@ struct State
         }
     }
 
-    void Clear() const
+    void clear() const
     {
         std::cout << "\x1B[1G"; // Reset to start of line
         if (last_height > 0) {
@@ -281,47 +249,47 @@ struct State
         std::cout << "\x1B[" << (1 + last_height) << "M"; // Clear lines!
     }
 
-    void Leave()
+    void leave()
     {
         if (!path.empty()) {
             const auto current_path = path;
             query.clear();
             if (path.has_parent_path()) {
-                Enter(path.parent_path());
+                enter(path.parent_path());
                 for (size_t i = 0; i < paths.size(); ++i) {
                     if (paths[i].path == current_path) {
                         selected = i;
                         break;
                     }
                 }
-                Draw();
+                draw();
             }
         }
     }
 
-    void Enter()
+    void enter()
     {
         if (!paths.empty()) {
-            if (const auto selected_file = paths[this->selected]; selected_file.dir && selected_file.non_empty) {
+            if (const auto selected_file = paths[this->selected]; selected_file.is_dir && selected_file.non_empty) {
                 query.clear();
-                Enter(selected_file.path);
-                Draw();
+                enter(selected_file.path);
+                draw();
             }
         }
     }
 
-    void ReturnToCurrent(int out_fd) const
+    void return_to_current(int out_fd) const
     {
         write(out_fd, ".", 1);
         fsync(out_fd);
 
-        Clear();
-        ClearExtra(clear_lines_on_exit);
+        clear();
+        clear_extra(clear_lines_on_exit);
     }
 
-    [[nodiscard]] bool Open(int out_fd) const
+    [[nodiscard]] bool open(int out_fd) const
     {
-        fs::path target;
+        std::filesystem::path target;
         if (query.empty()) {
             target = path.string();
         } else {
@@ -329,13 +297,13 @@ struct State
                 std::cerr << "INVALID SELECTED " << selected << " > " << paths.size() << '\n';
                 return false;
             }
-            if (const auto selected_dir = paths[selected]; selected_dir.dir) {
+            if (const auto selected_dir = paths[selected]; selected_dir.is_dir) {
                 target = selected_dir.path.string();
             } else {
                 target = path.string();
             }
         }
-        if (!fs::exists(target)) {
+        if (!std::filesystem::exists(target)) {
             std::cerr << "TARGET DOES NOT EXIST " << target.c_str() << '\n';
             return false;
         }
@@ -344,27 +312,27 @@ struct State
         write(out_fd, target_str.data(), target_str.size());
         fsync(out_fd);
 
-        Clear();
-        ClearExtra(clear_lines_on_exit);
+        clear();
+        clear_extra(clear_lines_on_exit);
 
         return true;
     }
 
-    void Prev()
+    void prev()
     {
         if (selected > 0) {
             selected--;
-            indexes[path.string()] = selected;
-            Draw();
+            index_cache[path] = selected;
+            draw();
         }
     }
 
-    void Next()
+    void next()
     {
         if (selected + 1 < paths.size()) {
             selected++;
-            indexes[path.string()] = selected;
-            Draw();
+            index_cache[path] = selected;
+            draw();
         }
     }
 };
@@ -379,16 +347,16 @@ int main(const int argc, char** argv)
 
     constexpr int output_fd = 3;
 
-    auto state = State{std::stoi(argv[1])};
-    state.ClearExtra(1);
+    LsInteractive state = {};
+    state.clear_lines_on_exit = std::stoi(argv[1]);
+    state.clear_extra(1);
     std::filesystem::path path;
     if (const char* home = getenv("HOME")) {
         path = home;
-    }
-    try {
-        path = fs::current_path();
+    } try {
+        path = std::filesystem::current_path();
     } catch (...) {}
-    state.Enter(path);
+    state.enter(path);
 
     static termios orig_termios;
 
@@ -420,54 +388,54 @@ int main(const int argc, char** argv)
                 if (getch() == '[') {
                     c = getch();
                     switch (c) {
-                        break;case 'A': /* up        */ state.Prev();
-                        break;case 'B': /* down      */ state.Next();
-                        break;case 'C': /* right     */ state.Enter();
-                        break;case 'D': /* left      */ state.Leave();
-                        break;case 'Z': /* shift-tab */ state.Prev();
+                        break;case 'A': /* up        */ state.prev();
+                        break;case 'B': /* down      */ state.next();
+                        break;case 'C': /* right     */ state.enter();
+                        break;case 'D': /* left      */ state.leave();
+                        break;case 'Z': /* shift-tab */ state.prev();
                         break;default:
                             ;
                     }
                 } else {
                     // Must be escape key
-                    state.ReturnToCurrent(output_fd);
+                    state.return_to_current(output_fd);
                     return EXIT_SUCCESS;
                 }
             }
-            else if (c == '\t') state.Next();
+            else if (c == '\t') state.next();
             else if (c == 23 /* ctrl-W */) {
                 state.query.clear();
-                state.UpdateResults();
+                state.update_results();
             }
             else if (c == 127 /* backspace */) {
                 if (state.query.empty()) {
-                    state.Leave();
+                    state.leave();
                 } else {
                     state.query.resize(state.query.length() - 1);
-                    state.UpdateResults();
+                    state.update_results();
                 }
             }
             else if (c == 8 /* ctrl-backspace */) {
                 state.query.clear();
-                state.UpdateResults();
+                state.update_results();
             }
             else if (c == '\n') {
-                if (state.Open(output_fd)) {
+                if (state.open(output_fd)) {
                     return EXIT_SUCCESS;
                 }
             }
-            else if (c == '/') state.Enter();
+            else if (c == '/') state.enter();
             else if (c == ':') {
                 state.query.clear();
-                state.Enter("/");
+                state.enter("/");
             }
             else if (c == '~') {
                 state.query.clear();
-                state.Enter(getenv("HOME"));
+                state.enter(getenv("HOME"));
             }
             else if (c >= ' ' && c <= '~') {
                 state.query += c;
-                state.UpdateResults();
+                state.update_results();
             }
         }
     }
