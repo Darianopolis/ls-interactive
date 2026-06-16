@@ -1,35 +1,26 @@
 # Ls Interactive
 
-A tiny tool for quickly and seamlessly navigating through a filesystem in a local terminal.
+A tiny tool for quickly navigating through a filesystem inline in a terminal shell.
 
-Reduces terminal clutter by avoiding long strings of `ls`, `dir` and `cd` that clutter your command history and console buffer.
-
-Everything is done in one command that cleans up after itself to integrate seamlessly into the console UX.
-
-Goals:
+### Goals:
 - Beat `dir`, `ls` and `cd` in number of keypresses required to perform any common actions. (Additional functionality shouldn't come at the cost of overhead)
     - E.g. `cd ..` takes 6 keypresses and two hands. `li`, `Enter`, `Backspace`, `Enter` takes only 5 and one hand.
 - Avoid cluttering up console output by reusing console buffer lines.
 
-Todo:
+### To Do:
 - Tidy up and refactor.
 - Add option to quit **without** clearing output.
-- Add Linux support.
 
 # Build, Install & Run
 
-ls-interactive is only currently supported on Windows.
-
-1) Compile `li-win.cpp` -> `bin/li-win.exe`
-2) Add `bin` folder to your system path.
-3) Use `li` in a supported shell to start the tool.
+- Build and install CMake project
+- Add `alias li='. ls-interactive.sh'` to your shell (E.g. in `.bashrc`)
 
 # Controls
 
 These controls are hardcoded and their actions may depend on context. They are optimized for speed, and may not seem entirely intuitive at first.
 
-- `:` - Go to drive specified by current query
-    - E.g. `D`, `:` jumps to root of D drive.
+- `:` - Go to root
 - `/` - Enter selected folder
 - `Enter`
     - If query is **empty** or selected entry is **not** a folder, exit and `cd` to currently open folder
@@ -39,7 +30,7 @@ These controls are hardcoded and their actions may depend on context. They are o
 - `Up/Down Arrows` - Move up/down list
 - `Right Arrow` - Open selected folder
 - `Left Arrow` - Leave currently open folder
-- `Shift Backspace` - Clear query
+- `Control Backspace` - Clear query
 - `Backspace`
     - If query is **empty**, leave currently open folder
     - Else, delete last character of query.

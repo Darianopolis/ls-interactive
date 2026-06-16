@@ -1,5 +1,0 @@
-#!/bin/bash
-
-li-posix 0 $LI_TMP_FILE
-cd "$(<$LI_TMP_FILE)"
-truncate -s 0 $LI_TMP_FILE

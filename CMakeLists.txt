@@ -1,15 +1,10 @@
-cmake_minimum_required(VERSION 3.26)
-project(li)
+cmake_minimum_required(VERSION 4.0)
+project(ls-interactive)
 
-add_executable(li ${CMAKE_SOURCE_DIR}/li.cpp)
-target_compile_features(li PUBLIC cxx_std_23)
-if(WIN32)
-    add_custom_command(TARGET li POST_BUILD COMMAND
-        ${CMAKE_COMMAND} -E copy $<TARGET_FILE:li> ${CMAKE_SOURCE_DIR}/bin/li-win.exe
-        )
-else()
-    target_link_libraries(li PRIVATE X11)
-    add_custom_command(TARGET li POST_BUILD COMMAND
-        ${CMAKE_COMMAND} -E copy $<TARGET_FILE:li> ${CMAKE_SOURCE_DIR}/bin/li-posix
-        )
-endif()
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+add_executable(ls-interactive src/ls-interactive.cpp)
+target_compile_options(ls-interactive PUBLIC --std=c++20)
+
+install(TARGETS ls-interactive DESTINATION bin)
+install(PROGRAMS src/ls-interactive.sh DESTINATION bin)

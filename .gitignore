@@ -1,8 +1,0 @@
-# IDE
-.vscode/
-.idea/
-
-# Output
-build/
-bin/li-win.exe
-bin/li-posix

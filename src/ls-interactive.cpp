@@ -1,48 +1,23 @@
-#if defined(WIN32)
-#define LI_PLATFORM_WINDOWS
-#else
-#define LI_PLATFORM_LINUX
-#endif
-
-#if defined(LI_PLATFORM_WINDOWS)
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#endif
-
-#if defined(LI_PLATFORM_LINUX)
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
 #include <cassert>
 
-// For tracking shift modifier state in a graphical environment with X11/XWayland available
-#include <X11/XKBlib.h>
 #include <poll.h>
-#endif
 
 #include <iostream>
 #include <filesystem>
 #include <algorithm>
 #include <unordered_map>
-#include <ranges>
-#include <fstream>
 #include <vector>
+#include <format>
 
 using namespace std::literals;
 
-// https://docs.microsoft.com/en-us/windows/console/classic-vs-vt
-// https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
-
 namespace fs = std::filesystem;
 
-#if defined(LI_PLATFORM_WINDOWS)
-constexpr char Separator = '\\';
-#endif
-#if defined(LI_PLATFORM_LINUX)
 constexpr char Separator = '/';
-#endif
 constexpr char SeparatorStr[2] = { Separator, '\0' };
 
 struct File
@@ -212,17 +187,9 @@ struct State
 
     void Draw()
     {
-#if defined(LI_PLATFORM_WINDOWS)
-        CONSOLE_SCREEN_BUFFER_INFO inf;
-        GetConsoleScreenBufferInfo(out_handle, &inf);
-        const auto cols = inf.srWindow.Right - inf.srWindow.Left + 1;
-#endif
-
-#if defined(LI_PLATFORM_LINUX)
         struct winsize w;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
         const auto cols = w.ws_col;
-#endif
 
         std::cout << "\x1B[?25l"; // Hide cursor
         std::cout << "\x1B[1G"; // Reset to start of line
@@ -249,13 +216,7 @@ struct State
             using namespace std::string_literals;
             std::cout << ((i == selected) ? ">> \x1B[4m" : "   ");
 
-#if defined(LI_PLATFORM_WINDOWS)
-#  define LI_FOLDER_COLOR "33m"
-#endif
-
-#if defined(LI_PLATFORM_LINUX)
-# define LI_FOLDER_COLOR "93m"
-#endif
+#define LI_FOLDER_COLOR "93m"
 
             std::cout << (p.dir && p.non_empty ? "\x1B[" LI_FOLDER_COLOR : "\x1B[39m");
 
@@ -349,40 +310,39 @@ struct State
         }
     }
 
-    void ReturnToCurrent(const fs::path& cd_output) const
+    void ReturnToCurrent(int out_fd) const
     {
-        std::ofstream out(cd_output, std::ios::out);
-        if (out) {
-            out << ".";
-            out.flush();
-            out.close();
-        }
+        write(out_fd, ".", 1);
+        fsync(out_fd);
 
         Clear();
         ClearExtra(clear_lines_on_exit);
     }
 
-    [[nodiscard]] bool Open(const fs::path& cd_output) const
+    [[nodiscard]] bool Open(int out_fd) const
     {
         fs::path target;
         if (query.empty()) {
             target = path.string();
         } else {
-            if (selected >= paths.size()) return false;
+            if (selected >= paths.size()) {
+                std::cerr << "INVALID SELECTED " << selected << " > " << paths.size() << '\n';
+                return false;
+            }
             if (const auto selected_dir = paths[selected]; selected_dir.dir) {
                 target = selected_dir.path.string();
             } else {
                 target = path.string();
             }
         }
-        if (!fs::exists(target)) return false;
-
-        std::ofstream out(cd_output, std::ios::out);
-        if (out) {
-            out << target.string();
-            out.flush();
-            out.close();
+        if (!fs::exists(target)) {
+            std::cerr << "TARGET DOES NOT EXIST " << target.c_str() << '\n';
+            return false;
         }
+
+        auto target_str = target.string();
+        write(out_fd, target_str.data(), target_str.size());
+        fsync(out_fd);
 
         Clear();
         ClearExtra(clear_lines_on_exit);
@@ -411,30 +371,13 @@ struct State
 
 int main(const int argc, char** argv)
 {
-    if (argc != 3) {
-        std::cerr << "Expected temp output file location!\n";
-        return 1;
-    }
-
     if (auto* extra_clears_str = std::getenv("LI_EXTRACLEARS")) {
         if (int extra_clears = std::stoi(extra_clears_str)) {
             std::cout << std::format("\x1b[{}M\x1b[0G\x1b[{}A", extra_clears + 1, extra_clears);
         }
     }
 
-    const auto cd_output = fs::path(argv[2]);
-
-#if defined(LI_PLATFORM_WINDOWS)
-    const HANDLE hConsole = GetStdHandle(STD_INPUT_HANDLE);
-    const HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwOriginalOutMode;
-    GetConsoleMode(hOut, &dwOriginalOutMode);
-    DWORD flags = dwOriginalOutMode;
-    flags |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    flags |= DISABLE_NEWLINE_AUTO_RETURN;
-    SetConsoleMode(hOut, flags);
-    SetConsoleCP(CP_UTF8);
-#endif
+    constexpr int output_fd = 3;
 
     auto state = State{std::stoi(argv[1])};
     state.ClearExtra(1);
@@ -447,85 +390,6 @@ int main(const int argc, char** argv)
     } catch (...) {}
     state.Enter(path);
 
-#if defined(LI_PLATFORM_WINDOWS)
-    INPUT_RECORD inputBuffer[1];
-    const INPUT_RECORD& input = inputBuffer[0];
-    DWORD inputsRead;
-    while (ReadConsoleInput(hConsole, inputBuffer, 1, &inputsRead)) {
-        if (inputsRead == 0) {
-            std::cout << "No inputs read!\n";
-            return 0;
-        }
-        if (input.EventType == KEY_EVENT) {
-            const KEY_EVENT_RECORD& e = input.Event.KeyEvent;
-            if (e.bKeyDown) {
-                if (e.wVirtualKeyCode == VK_UP
-                        || (e.wVirtualKeyCode == VK_TAB && (e.dwControlKeyState & SHIFT_PRESSED))
-                        || (e.uChar.AsciiChar == 'k' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
-                    state.Prev();
-
-                } else if (e.wVirtualKeyCode == VK_DOWN
-                         || (e.wVirtualKeyCode == VK_TAB && !(e.dwControlKeyState & SHIFT_PRESSED))
-                         || (e.uChar.AsciiChar == 'j' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
-                    state.Next();
-
-                } else if (e.wVirtualKeyCode == VK_LEFT
-                         || (e.wVirtualKeyCode == VK_BACK
-                             && state.query.empty()
-                             && !(e.dwControlKeyState & SHIFT_PRESSED))
-                         || (e.uChar.AsciiChar == 'h' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
-                    state.Leave();
-
-                } else if (e.wVirtualKeyCode == VK_RIGHT
-                         || e.uChar.AsciiChar == '\\' || e.uChar.AsciiChar == '/'
-                         || (e.uChar.AsciiChar == 'l' && (e.dwControlKeyState & LEFT_CTRL_PRESSED))) {
-                    state.Enter();
-
-                } else if (e.wVirtualKeyCode == VK_RETURN) {
-                    if (state.Open(cd_output)) {
-                        return 0;
-                    }
-
-                } else if (e.wVirtualKeyCode == VK_ESCAPE) {
-                    state.ReturnToCurrent(cd_output);
-                    return 0;
-
-                } else if (e.uChar.AsciiChar == ':') {
-                    if (state.query.size() == 1) {
-                        std::string letter { char(std::toupper(state.query[0])) };
-                        auto path = fs::path(letter + ":\\");
-                        if (exists(path)) {
-                            state.query.clear();
-                            state.Enter(path);
-                        }
-                    } else {
-                        state.query.clear();
-                        state.Enter("\\");
-                    }
-
-                } else if (e.uChar.AsciiChar >= ' ' && e.uChar.AsciiChar <= '~') {
-                    const char c = e.uChar.AsciiChar;
-                    state.query += c;
-                    state.UpdateResults();
-
-                } else if (e.wVirtualKeyCode == VK_BACK) {
-                    if (!state.query.empty()) {
-                        if (e.dwControlKeyState & SHIFT_PRESSED) {
-                            state.query.clear();
-                        } else {
-                            state.query.resize(state.query.length() - 1);
-                        }
-                        state.UpdateResults();
-                    }
-                }
-            }
-        }
-    }
-
-    std::cout << "Error: " << GetLastError() << '\n';
-#endif
-
-#if defined(LI_PLATFORM_LINUX)
     static termios orig_termios;
 
     tcgetattr(STDIN_FILENO, &orig_termios);
@@ -538,10 +402,7 @@ int main(const int argc, char** argv)
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 
-    // Try to open an X11 display. If this fails we skip checking for shift states
-    auto display = XOpenDisplay(NULL);
-
-    constexpr static auto getch = [] -> char {
+    constexpr static auto getch = []() -> char {
         char c = -1;
         auto res = read(STDIN_FILENO, &c, 1);
         return c;
@@ -555,39 +416,31 @@ int main(const int argc, char** argv)
             auto c = getch();
             if (c <= 0) break;
 
-            // if (iscntrl(c)) {
-            //     printf("%d\r\n", c);
-            // } else {
-            //     printf("%d ('%c')\r\n", c, c);
-            // }
-
-            if (c == 27 /* control */) {
+            if (c == 27 /* esc */) {
                 if (getch() == '[') {
                     c = getch();
-                    if      (c == 'A' /* up */) state.Prev();
-                    else if (c == 'B' /* down */) state.Next();
-                    else if (c == 'C' /* right */) state.Enter();
-                    else if (c == 'D' /* left */) state.Leave();
-                    else if (c == 'Z' /* shift-tab */) state.Prev();
+                    switch (c) {
+                        break;case 'A': /* up        */ state.Prev();
+                        break;case 'B': /* down      */ state.Next();
+                        break;case 'C': /* right     */ state.Enter();
+                        break;case 'D': /* left      */ state.Leave();
+                        break;case 'Z': /* shift-tab */ state.Prev();
+                        break;default:
+                            ;
+                    }
                 } else {
-                    // Must be ESC key
-                    state.ReturnToCurrent(cd_output);
+                    // Must be escape key
+                    state.ReturnToCurrent(output_fd);
                     return EXIT_SUCCESS;
                 }
             }
             else if (c == '\t') state.Next();
-            else if (c == 23 /* Ctrl-W */) {
+            else if (c == 23 /* ctrl-W */) {
                 state.query.clear();
                 state.UpdateResults();
             }
             else if (c == 127 /* backspace */) {
-                XkbStateRec xkb_state = {};
-                if (display) XkbGetState(display, XkbUseCoreKbd, &xkb_state);
-                if (xkb_state.mods & ShiftMask) {
-                    state.query.clear();
-                    state.UpdateResults();
-                }
-                else if (state.query.empty()) {
+                if (state.query.empty()) {
                     state.Leave();
                 } else {
                     state.query.resize(state.query.length() - 1);
@@ -599,7 +452,7 @@ int main(const int argc, char** argv)
                 state.UpdateResults();
             }
             else if (c == '\n') {
-                if (state.Open(cd_output)) {
+                if (state.Open(output_fd)) {
                     return EXIT_SUCCESS;
                 }
             }
@@ -620,6 +473,4 @@ int main(const int argc, char** argv)
     }
 
     return EXIT_SUCCESS;
-
-#endif
 }
