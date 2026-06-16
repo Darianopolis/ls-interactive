@@ -141,8 +141,12 @@ struct State
         return cached;
     }
 
-    void Enter(const fs::path& p)
+    void Enter(fs::path p)
     {
+        while (!std::filesystem::exists(p)) {
+            p = p.parent_path();
+        }
+
         paths.clear();
         this->path = p;
 
@@ -434,7 +438,14 @@ int main(const int argc, char** argv)
 
     auto state = State{std::stoi(argv[1])};
     state.ClearExtra(1);
-    state.Enter(fs::current_path());
+    std::filesystem::path path;
+    if (const char* home = getenv("HOME")) {
+        path = home;
+    }
+    try {
+        path = fs::current_path();
+    } catch (...) {}
+    state.Enter(path);
 
 #if defined(LI_PLATFORM_WINDOWS)
     INPUT_RECORD inputBuffer[1];
